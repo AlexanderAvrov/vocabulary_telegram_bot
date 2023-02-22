@@ -2,7 +2,6 @@ import os
 import logging
 
 import requests
-import chardet
 from dotenv import load_dotenv
 from selenium import webdriver
 from telegram import ReplyKeyboardMarkup
@@ -18,6 +17,8 @@ logging.basicConfig(
 
 URL_CAT = 'https://api.thecatapi.com/v1/images/search'
 URL_DOG = 'https://api.thedogapi.com/v1/images/search'
+ALPHABET_EN = (["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k",
+                "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"])
 
 
 def get_new_image_cat():
@@ -48,7 +49,7 @@ def get_new_image_dog():
 
 def translate(text, source_lang, target_lang):
     """Перевод текста"""
-    url = "https://libretranslate.com/"
+    url = f'https://libretranslate.com/?source={source_lang}&target={target_lang}&q={text}'
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
     driver = webdriver.Chrome(options=options)
@@ -75,12 +76,10 @@ def translate(text, source_lang, target_lang):
 def translate_me(update, context):
     """Запуск функции перевода и отправка сообщения с переводом"""
     text = update.message.text
-    lang = chardet.detect(text.encode('cp1251'))
-    if lang['language'] == 'Russian':
-        source_lang, target_lang = 'ru', 'en'
-    else:
+    if text[0].lower() in ALPHABET_EN:
         source_lang, target_lang = 'en', 'ru'
-    print(lang)
+    else:
+        source_lang, target_lang = 'ru', 'en'
     translate_text = translate(text, source_lang, target_lang)
     chat = update.effective_chat
     context.bot.send_message(
