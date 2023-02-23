@@ -7,6 +7,8 @@ from selenium import webdriver
 from telegram import ReplyKeyboardMarkup
 from telegram.ext import CommandHandler, Filters, MessageHandler, Updater
 
+from database import session, User, Translate, Learning
+
 load_dotenv()
 token = os.getenv('TOKEN')
 
@@ -47,7 +49,7 @@ def get_new_image_dog():
     return random_dog
 
 
-def translate(text, source_lang, target_lang):
+def translating_word(text, source_lang, target_lang):
     """Перевод текста"""
     url = f'https://libretranslate.com/?source={source_lang}&target={target_lang}&q={text}'
     options = webdriver.ChromeOptions()
@@ -75,13 +77,29 @@ def translate(text, source_lang, target_lang):
 
 def translate_me(update, context):
     """Запуск функции перевода и отправка сообщения с переводом"""
+    chat = update.effective_chat
+    user = session.query(User).filter(User.id_user == chat.id).first()
+    if not user:
+        user = User(id_user=chat.id)
+        session.add(user)
     text = update.message.text
     if text[0].lower() in ALPHABET_EN:
         source_lang, target_lang = 'en', 'ru'
+        translate = session.query(Translate).filter(Translate.text == text).first()
+        print(translate)
+        if translate:
+            translate_text = translate.translate
     else:
         source_lang, target_lang = 'ru', 'en'
-    translate_text = translate(text, source_lang, target_lang)
-    chat = update.effective_chat
+        translate = session.query(Translate).filter(Translate.translate == text).first()
+        if translate:
+            translate_text = translate.text
+    if not translate:
+        translate_text = translating_word(text, source_lang, target_lang)
+        translate = Translate(text=text, translate=translate_text)
+        session.add(translate)
+    session.add(Learning(user=user.id, word=translate.id, is_learned=False))
+    session.commit()
     context.bot.send_message(
         chat_id=chat.id,
         text=f'{text} - {translate_text}',
