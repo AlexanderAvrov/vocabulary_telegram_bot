@@ -82,21 +82,20 @@ def translate_me(update, context):
     if not user:
         user = User(id_user=chat.id)
         session.add(user)
-    text = update.message.text
+    text = update.message.text.lower()
     if text[0].lower() in ALPHABET_EN:
         source_lang, target_lang = 'en', 'ru'
-        translate = session.query(Translate).filter(Translate.text == text).first()
-        print(translate)
+        translate = session.query(Translate).filter(Translate.english_expression == text).first()
         if translate:
-            translate_text = translate.translate
+            translate_text = translate.russian_expression
     else:
         source_lang, target_lang = 'ru', 'en'
-        translate = session.query(Translate).filter(Translate.translate == text).first()
+        translate = session.query(Translate).filter(Translate.russian_expression == text).first()
         if translate:
-            translate_text = translate.text
+            translate_text = translate.english_expression
     if not translate:
         translate_text = translating_word(text, source_lang, target_lang)
-        translate = Translate(text=text, translate=translate_text)
+        translate = Translate(english_expression=text, russian_expression=translate_text)
         session.add(translate)
     session.add(Learning(user=user.id, word=translate.id, is_learned=False))
     session.commit()
