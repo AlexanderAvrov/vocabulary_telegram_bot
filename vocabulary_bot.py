@@ -4,6 +4,7 @@ import logging
 import requests
 from dotenv import load_dotenv
 from selenium import webdriver
+from sqlalchemy import and_
 from telegram import ReplyKeyboardMarkup
 from telegram.ext import CommandHandler, Filters, MessageHandler, Updater
 
@@ -21,6 +22,8 @@ URL_CAT = 'https://api.thecatapi.com/v1/images/search'
 URL_DOG = 'https://api.thedogapi.com/v1/images/search'
 ALPHABET_EN = (["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k",
                 "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"])
+ALPHABET_RU = (['а', 'б', 'в', 'г', 'д', 'е', 'ё', 'ж', 'з', 'и', 'й', 'к', 'л', 'м', 'н',
+                'о', 'п', 'р', 'с', 'т', 'у', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'э', 'ю', 'я'])
 
 
 def get_new_image_cat():
@@ -82,28 +85,49 @@ def translate_me(update, context):
     if not user:
         user = User(id_user=chat.id)
         session.add(user)
-    text = update.message.text.lower()
-    if text[0].lower() in ALPHABET_EN:
+    input_text = update.message.text.lower()
+    if input_text[0].lower() in ALPHABET_EN:
         source_lang, target_lang = 'en', 'ru'
-        translate = session.query(Translate).filter(Translate.english_expression == text).first()
+        translate = session.query(Translate).filter(Translate.english_expression == input_text).first()
         if translate:
             translate_text = translate.russian_expression
-    else:
+    elif input_text[0].lower() in ALPHABET_RU:
         source_lang, target_lang = 'ru', 'en'
-        translate = session.query(Translate).filter(Translate.russian_expression == text).first()
+        translate = session.query(Translate).filter(Translate.russian_expression == input_text).first()
         if translate:
             translate_text = translate.english_expression
+    else:
+        context.bot.send_message(
+            chat_id=chat.id,
+            text=f'Такого языка я не знаю! Но зато у меня есть картинка с котиком',
+        )
+        context.bot.send_photo(chat.id, get_new_image_cat())
+        return
     if not translate:
-        translate_text = translating_word(text, source_lang, target_lang)
-        translate = Translate(english_expression=text, russian_expression=translate_text)
-        session.add(translate)
-    session.add(Learning(user=user.id, word=translate.id, is_learned=False))
-    session.commit()
+        translate_text = translating_word(input_text, source_lang, target_lang)
+        if source_lang == 'en':
+            translate = Translate(english_expression=input_text, russian_expression=translate_text)
+            session.add(translate)
+            session.commit()
+            translate = session.query(Translate).filter(Translate.english_expression == input_text).first()
+        else:
+            translate = Translate(english_expression=translate_text, russian_expression=input_text)
+            session.add(translate)
+            session.commit()
+            translate = session.query(Translate).filter(Translate.russian_expression == input_text).first()
+    is_learning = session.query(Learning).filter(and_(Learning.user == user.id, Learning.word == translate.id)).first()
+    if not is_learning:
+        session.add(Learning(user=user.id, word=translate.id, is_learned=False))
+    try:
+        session.commit()
+    except Exception as e:
+        print(e)
+
     context.bot.send_message(
         chat_id=chat.id,
-        text=f'{text} - {translate_text}',
+        text=f'{input_text} - {translate_text}',
     )
-    print(f'Сделал перевод: {text} - {translate_text}. Для {update.message.from_user.username}')
+    print(f'Сделал перевод: {input_text} - {translate_text}. Для {update.message.from_user.username}')
 
 
 def say_hi(update, context):    # TODO: сделать определение сообщения "привет" и отправки приветствия
@@ -132,16 +156,21 @@ def wake_up(update, context):
     chat = update.effective_chat
     name = update.message.chat.first_name
     button = ReplyKeyboardMarkup([
-                                  ['/foto_cat', '/foto_dog'],
-                                  ['Определи мой ip', '/random_digit'],    # TODO: настроить кнопки, убрать лишние
+                                  ['/foto_cat', '/foto_dog'],    # TODO: настроить кнопки, убрать лишние
                                  ], resize_keyboard=True)
     context.bot.send_message(
         chat_id=chat.id,
-        text='Привет, {}. Посмотри, какого котика я тебе нашёл'.format(name),
+        text=f'Привет, {update.message.from_user.first_name}. Посмотри, какого котика я тебе нашёл',
         reply_markup=button
     )
 
     context.bot.send_photo(chat.id, get_new_image_cat())
+    context.bot.send_message(
+        chat_id=chat.id,
+        text=('Если нужно перевести слово с английского, просто напиши мне его в чат.'
+              ' Так же можно перевести в обратную сторону.'),
+        reply_markup=button
+    )
 
 
 def main():
