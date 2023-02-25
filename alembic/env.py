@@ -15,6 +15,9 @@ config = context.config
 # This line sets up loggers basically.
 fileConfig(config.config_file_name)
 
+section = config.config_ini_section
+config.set_section_option(section, "DB_USER", os.environ.get("DB_USER"))
+config.set_section_option(section, "POSTGRES_PASSWORD", os.environ.get("POSTGRES_PASSWORD"))
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel

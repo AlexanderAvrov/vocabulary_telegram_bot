@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from sqlalchemy.engine import URL
 from sqlalchemy import create_engine, Table, Column, Integer, String, ForeignKey, Boolean, UniqueConstraint, MetaData
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 
 load_dotenv()
 password = os.getenv('POSTGRES_PASSWORD')
@@ -31,14 +31,16 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     id_user = Column(Integer, unique=True, nullable=False)
+    translates = relationship('Translate', secondary='Learning', back_populates='users')
 
 
 class Translate(Base):
     __tablename__ = 'Translate'
 
     id = Column(Integer, primary_key=True)
-    english_expression = Column(String(256), unique=True)
-    russian_expression = Column(String(512))
+    english_expression = Column(String(256), unique=True, nullable=False)
+    russian_expression = Column(String(512), nullable=False)
+    users = relationship('User', secondary='Learning', back_populates='translates')
 
 
 class Learning(Base):
