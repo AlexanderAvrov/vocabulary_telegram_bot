@@ -4,11 +4,11 @@ import random
 
 import requests
 from dotenv import load_dotenv
-from selenium import webdriver
 from sqlalchemy import and_
 from telegram import ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, Filters, MessageHandler, Updater, CallbackQueryHandler
 
+from animals import get_new_image_cat, new_cat, new_dog
 from database import session, User, Translate, Learning
 
 load_dotenv()
@@ -19,63 +19,14 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-URL_CAT = 'https://api.thecatapi.com/v1/images/search'
-URL_DOG = 'https://api.thedogapi.com/v1/images/search'
 ALPHABET_EN = (["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k",
                 "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"])
 ALPHABET_RU = (['а', 'б', 'в', 'г', 'д', 'е', 'ё', 'ж', 'з', 'и', 'й', 'к', 'л', 'м', 'н',
                 'о', 'п', 'р', 'с', 'т', 'у', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'э', 'ю', 'я'])
 
 
-def get_new_image_cat():
-    """Получение адреса картинки с котиком"""
-    try:
-        response = requests.get(URL_CAT)
-    except Exception as error:
-        logging.error(f'Ошибка при запросе к основному API: {error}')
-        response = requests.get(URL_DOG)
-
-    response = response.json()
-    random_cat = response[0].get('url')
-    return random_cat
-
-
-def get_new_image_dog():
-    """Получение адреса картинки с собачкой"""
-    try:
-        response = requests.get(URL_DOG)
-    except Exception as error:
-        print(error)
-        response = requests.get(URL_CAT)
-
-    response = response.json()
-    random_dog = response[0].get('url')
-    return random_dog
-
-
 def translating_word(text, sl, tl):
     """Перевод текста"""
-    # url = f'https://libretranslate.com/?source={source_lang}&target={target_lang}&q={text}'
-    # options = webdriver.ChromeOptions()
-    # options.add_argument('headless')
-    # driver = webdriver.Chrome(options=options)
-    # driver.get(url)
-    # js = f"""
-    # const res = await fetch("https://libretranslate.com/translate", {{
-    # 	method: "POST",
-    # 	body: JSON.stringify({{
-    # 		q: "{text}",
-    # 		source: "{source_lang}",
-    # 		target: "{target_lang}",
-    # 		format: "text",
-    # 		api_key: ""
-    # 	}}),
-    # 	headers: {{ "Content-Type": "application/json" }}
-    # }});
-    #
-    # return await res.json();
-    # """
-    # result = driver.execute_script(js)
     url = f'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl={sl}&tl={tl}&q={text}'
     response = requests.get(url)
     result = response.json()
@@ -114,18 +65,26 @@ def translate_me(update, context):
             session.add(translate)
             try:
                 session.commit()
-            except:
+            except Exception as e:
                 session.rollback()
+                print(e)
             translate = session.query(Translate).filter(Translate.english_expression == input_text).first()
         else:
             translate = Translate(english_expression=translate_text, russian_expression=input_text)
             session.add(translate)
             try:
                 session.commit()
-            except:
+            except Exception as e:
                 session.rollback()
+                print(e)
             translate = session.query(Translate).filter(Translate.russian_expression == input_text).first()
-    is_learning = session.query(Learning).filter(and_(Learning.user == user.id, Learning.word == translate.id)).first()
+    try:
+        is_learning = session.query(Learning).filter(
+            and_(Learning.user == user.id, Learning.word == translate.id)).first()
+    except Exception as e:
+        session.rollback()
+        print(e)
+        return
     if not is_learning:
         session.add(Learning(user=user.id, word=translate.id, is_learned=False))
     try:
@@ -141,35 +100,14 @@ def translate_me(update, context):
     print(f'Сделал перевод: {input_text} - {translate_text}. Для {update.message.from_user.username}')
 
 
-def say_hi(update, context):    # TODO: сделать определение сообщения "привет" и отправки приветствия
-    """Функция приветствия"""
-    name = update.message.from_user.username
-    chat = update.effective_chat
-    print(name)
-
-    context.bot.send_message(
-        chat_id=chat.id,
-        text=f'Привет, {name}, я Вальдемар_Bot!',
-    )
-
-
-def new_cat(update, context):
-    chat = update.effective_chat
-    context.bot.send_photo(chat.id, get_new_image_cat())
-
-
-def new_dog(update, context):
-    chat = update.effective_chat
-    context.bot.send_photo(chat.id, get_new_image_dog())
-
 def get_random_exclude(exclude, max_digit):
+    """Нахождение рандомного числа с исключениями"""
     rand_integer = random.randint(0, max_digit)
     return get_random_exclude(exclude, max_digit) if rand_integer in exclude else rand_integer
 
 
-# Функция, которая будет вызываться при получении команды /start
 def testing_words(update, context):
-    # Создаем клавиатуру с кнопкой
+    """Проверка слов в режиме викторины"""
     user = session.query(User).filter(User.id_user == update.effective_chat.id).first()
     translates = user.translates
     count_words = len(translates)
@@ -188,12 +126,14 @@ def testing_words(update, context):
     second_answer = get_random_exclude([first_answer], 2)
     third_answer = get_random_exclude([first_answer, second_answer], 2)
     answers = [translates[first], translates[second], translates[third]]
-    keyboard = [[InlineKeyboardButton(answers[first_answer].russian_expression, callback_data=(
+    keyboard = [[InlineKeyboardButton(f'1️⃣ {answers[first_answer].russian_expression}', callback_data=(
         'correct' if answers[first_answer].russian_expression == target_word else 'wrong'))],
-                [InlineKeyboardButton(answers[second_answer].russian_expression, callback_data=(
+                [InlineKeyboardButton(f'2️⃣ {answers[second_answer].russian_expression}', callback_data=(
                     'correct' if answers[second_answer].russian_expression == target_word else 'wrong'))],
-                [InlineKeyboardButton(answers[third_answer].russian_expression, callback_data=(
-                    'correct' if answers[third_answer].russian_expression == target_word else 'wrong'))]
+                [InlineKeyboardButton(f'3️⃣ {answers[third_answer].russian_expression}', callback_data=(
+                    'correct' if answers[third_answer].russian_expression == target_word else 'wrong'))],
+                [InlineKeyboardButton('Удалить слово ❌', callback_data=f'delete-{translates[first].id}-test')],
+                [InlineKeyboardButton('Закончить повторение слов ⛔', callback_data='stop')]
                 ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -205,15 +145,62 @@ def testing_words(update, context):
     )
 
 
-# Функция, которая будет вызываться при нажатии на кнопку
+def repeat_words(update, context, count=0):
+    """Повторение слов"""
+    user = session.query(User).filter(User.id_user == update.effective_chat.id).first()
+    translates = user.translates
+    if count >= len(translates):
+        count = 0
+    if len(translates) < 1:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='У вас нет слов для повторения 🙁 Добавьте хотя бы одно! Просто напишите мне незнакомое слово.')
+        return
+    translate = translates[count]
+    keyboard = [[InlineKeyboardButton('Следующее слово ➡️', callback_data=f'next-{count}')],
+                [InlineKeyboardButton('Удалить слово ❌', callback_data=f'delete-{translate.id}-repeat-{count}')],
+                [InlineKeyboardButton('Закончить повторение слов ⛔', callback_data='stop')]
+                ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f'🇦🇺 {translate.english_expression} - {translate.russian_expression} 🇷🇺',
+            reply_markup=reply_markup
+        )
+
+
 def check_answer(update, context):
+    """Проверка ответа (callback_query)"""
     query = update.callback_query
     if query.data == 'correct':
         context.bot.send_message(chat_id=update.effective_chat.id, text='Правильно! ✅')
-    else:
+    elif query.data == 'wrong':
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f'Неправильно! ❌')
+            text=f'⛔ Неправильно! ‼️')
+    elif 'next' in query.data:
+        data = query.data.split('-')
+        count = int(data[1])
+        count += 1
+        return repeat_words(update, context, count)
+    elif 'delete' in query.data:
+        data = query.data.split('-')
+        count = int(data[1])
+        count += 1
+        translate_id = data[1]
+        user = session.query(User).filter(User.id_user == update.effective_chat.id).first()
+        session.query(Learning).filter(and_(Learning.user == user.id, Learning.word == translate_id)).delete()
+        session.commit()
+        if data[2] == 'repeat':
+            return repeat_words(update, context, count)
+        else:
+            return testing_words(update, context)
+    elif query.data == 'stop':
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f' Повторение слов окончено 🤗'
+        )
+        return
     context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=f'Следующий вопрос: ... ⬇️')
@@ -223,11 +210,14 @@ def check_answer(update, context):
     testing_words(update, context)
 
 
+
+
 def wake_up(update, context):
     chat = update.effective_chat
     name = update.message.chat.first_name
     button = ReplyKeyboardMarkup([
-                                  ['/test_vocabulary'],    # TODO: настроить кнопки, убрать лишние
+                                  ['/repeat'],
+                                  ['/test'],
                                  ], resize_keyboard=True)
     context.bot.send_message(
         chat_id=chat.id,
@@ -249,7 +239,8 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('start', wake_up))
     updater.dispatcher.add_handler(CommandHandler('foto_cat', new_cat))
     updater.dispatcher.add_handler(CommandHandler('foto_dog', new_dog))
-    updater.dispatcher.add_handler(CommandHandler('test_vocabulary', testing_words))
+    updater.dispatcher.add_handler(CommandHandler('test', testing_words))
+    updater.dispatcher.add_handler(CommandHandler('repeat', repeat_words))
     updater.dispatcher.add_handler(CallbackQueryHandler(check_answer))
 
     updater.dispatcher.add_handler(MessageHandler(Filters.text, translate_me))

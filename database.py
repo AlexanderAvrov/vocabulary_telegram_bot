@@ -1,6 +1,5 @@
 import os
 
-from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy.engine import URL
 from sqlalchemy import create_engine, Table, Column, Integer, String, ForeignKey, Boolean, UniqueConstraint, MetaData
@@ -38,8 +37,8 @@ class Translate(Base):
     __tablename__ = 'Translate'
 
     id = Column(Integer, primary_key=True)
-    english_expression = Column(String(256), unique=True, nullable=False)
-    russian_expression = Column(String(512), nullable=False)
+    english_expression = Column(String(256), unique=True)
+    russian_expression = Column(String(512))
     users = relationship('User', secondary='Learning', back_populates='translates')
 
 
@@ -51,5 +50,6 @@ class Learning(Base):
     word = Column(ForeignKey('Translate.id', ondelete='CASCADE'))
     is_learned = Column(Boolean)
     __table_args__ = (UniqueConstraint('user', 'word', name='user_word_unique'),)
+
 
 Base.metadata.create_all(engine)
