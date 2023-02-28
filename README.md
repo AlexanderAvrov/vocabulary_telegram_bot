@@ -30,3 +30,9 @@
 3.  Применить миграции:  `alembic upgrade head`
 4.  Создать .env файл и заполнить по образцу выше
 5.  Запустить файл: **vocabulary_bot.py**
+
+
+### Над ботом работали
+
+- [Александр Авров](https://github.com/AlexanderAvrov)
+- [Тагир Хусаенов](https://github.com/Ta9ear)
