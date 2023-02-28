@@ -140,7 +140,7 @@ def testing_words(update, context):
     # Отправляем сообщение с клавиатурой
     context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f'🇦🇺 {translates[first].english_expression} - это ...',
+        text=f'🇬🇧 {translates[first].english_expression} - это ...',
         reply_markup=reply_markup
     )
 
@@ -164,9 +164,36 @@ def repeat_words(update, context, count=0):
     reply_markup = InlineKeyboardMarkup(keyboard)
     context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f'🇦🇺 {translate.english_expression} - {translate.russian_expression} 🇷🇺',
+            text=f'🇬🇧 {translate.english_expression} - {translate.russian_expression} 🇷🇺',
             reply_markup=reply_markup
         )
+
+
+def discover_new_words(update, context):
+    """Изучение новых рандомных слов"""
+    response = requests.get('https://random-word-api.herokuapp.com/word')
+    response = response.json()
+    print(response)
+    translate = session.query(Translate).filter(Translate.english_expression == response[0]).first()
+    if not translate:
+        russian_expression = translating_word(response[0], 'en', 'ru')
+        translate = Translate(english_expression=response[0], russian_expression=russian_expression)
+        session.add(translate)
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(e)
+    keyboard = [[InlineKeyboardButton('Следующее слово ➡️', callback_data=f'next-discover')],
+                [InlineKeyboardButton('Добавить слово для изучения ✳️', callback_data=f'add-{translate.id}')],
+                [InlineKeyboardButton('Закончить ⛔', callback_data='stop')]
+                ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f'🇬🇧 {translate.english_expression} - {translate.russian_expression} 🇷🇺',
+        reply_markup=reply_markup
+    )
 
 
 def check_answer(update, context):
@@ -180,9 +207,28 @@ def check_answer(update, context):
             text=f'⛔ Неправильно! ‼️')
     elif 'next' in query.data:
         data = query.data.split('-')
-        count = int(data[1])
-        count += 1
+        count = data[1]
+        if count == 'discover':
+            return discover_new_words(update, context)
+        count = int(count) + 1
+
         return repeat_words(update, context, count)
+
+    elif 'add' in query.data:
+        data = query.data.split('-')
+        id_translate = int(data[1])
+        chat = update.effective_chat
+        user = session.query(User).filter(User.id_user == chat.id).first()
+        learning = Learning(user=user.id, word=id_translate, is_learned=False)
+        session.add(learning)
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(e)
+
+        return discover_new_words(update, context)
+
     elif 'delete' in query.data:
         data = query.data.split('-')
         count = int(data[1])
@@ -194,13 +240,17 @@ def check_answer(update, context):
         if data[2] == 'repeat':
             return repeat_words(update, context, count)
         else:
+
             return testing_words(update, context)
+
     elif query.data == 'stop':
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f' Повторение слов окончено 🤗'
+            text=f'Let\'s pause. 🤗'
         )
+
         return
+
     context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=f'Следующий вопрос: ... ⬇️')
@@ -210,27 +260,21 @@ def check_answer(update, context):
     testing_words(update, context)
 
 
-
-
 def wake_up(update, context):
     chat = update.effective_chat
-    name = update.message.chat.first_name
-    button = ReplyKeyboardMarkup([
-                                  ['/repeat'],
-                                  ['/test'],
-                                 ], resize_keyboard=True)
     context.bot.send_message(
         chat_id=chat.id,
-        text=f'Привет, {update.message.from_user.first_name}. Посмотри, какого котика я тебе нашёл',
-        reply_markup=button
+        text=f'Привет, {update.message.from_user.first_name}. Посмотри, какого котика я тебе нашёл'
     )
 
     context.bot.send_photo(chat.id, get_new_image_cat())
     context.bot.send_message(
         chat_id=chat.id,
         text=('Если нужно перевести слово с английского, просто напиши мне его в чат.'
-              ' Так же можно перевести в обратную сторону.'),
-        reply_markup=button
+              ' Так же можно перевести в обратную сторону.\n'
+              '/repeat - повторение добавленных слов\n'
+              '/test - викторина, проверка изученных слов\n'
+              '/new_words - изучение рандомных слов')
     )
 
 
@@ -241,6 +285,7 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('foto_dog', new_dog))
     updater.dispatcher.add_handler(CommandHandler('test', testing_words))
     updater.dispatcher.add_handler(CommandHandler('repeat', repeat_words))
+    updater.dispatcher.add_handler(CommandHandler('new_words', discover_new_words))
     updater.dispatcher.add_handler(CallbackQueryHandler(check_answer))
 
     updater.dispatcher.add_handler(MessageHandler(Filters.text, translate_me))
